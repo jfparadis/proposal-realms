@@ -9,13 +9,14 @@ import { freeze } from './commons';
 // We need this to implement the shim. However, when Realms land for real,
 // this feature will be provided by the underlying engine instead.
 
-// Detection used in RollupJS.
+// Platform detection: node, jsdom on node, browser.
 const isNode = typeof exports === 'object' && typeof module !== 'undefined';
 const isBrowser = typeof document === 'object';
-if ((!isNode && !isBrowser) || (isNode && isBrowser)) {
+if (!isNode && !isBrowser) {
   throw new Error('unexpected platform, unable to create Realm');
 }
-const vm = isNode ? require('vm') : undefined;
+// Use the browser API if present over the node vm API.
+const vm = isNode && !isBrowser ? require('vm') : undefined;
 
 // note: in a node module, the top-level 'this' is not the global object
 // (it's *something* but we aren't sure what), however an indirect eval of
@@ -39,19 +40,17 @@ function createNewUnsafeGlobalForBrowser() {
   const unsafeGlobal = iframe.contentWindow.eval(unsafeGlobalSrc);
 
   // We keep the iframe attached to the DOM because removing it
-  // causes its global object to lose intrinsics, its eval()
-  // function to evaluate code, etc.
+  // causes its global object to lose its intrinsics, its eval()
+  // function to cease to evaluate code, etc.
 
-  // TODO: can we remove and garbage-collect the iframes?
+  // todo: can we remove and garbage-collect the iframes?
 
   return unsafeGlobal;
 }
 
-// we only export this so test-repair.js can get an unrepaired
-// Object.prototype, to sense if this platform has the buggy behavior
-export const getNewUnsafeGlobal = isNode
-  ? createNewUnsafeGlobalForNode
-  : createNewUnsafeGlobalForBrowser;
+// Use the browser API if present over the node vm API.
+const getNewUnsafeGlobal =
+  isNode && !isBrowser ? createNewUnsafeGlobalForNode : createNewUnsafeGlobalForBrowser;
 
 // The unsafeRec is shim-specific. It acts as the mechanism to obtain a fresh
 // set of intrinsics together with their associated eval and Function
@@ -59,7 +58,7 @@ export const getNewUnsafeGlobal = isNode
 // tied to a set of intrinsics, aka the "undeniables". If it were possible to
 // mix-and-match them from different contexts, that would enable some
 // attacks.
-function createUnsafeRec(unsafeGlobal, allShims) {
+function createUnsafeRec(unsafeGlobal, allShims = []) {
   const sharedGlobalDescs = getSharedGlobalDescs(unsafeGlobal);
 
   return freeze({
@@ -74,8 +73,8 @@ function createUnsafeRec(unsafeGlobal, allShims) {
 const repairAccessorsShim = cleanupSource(`"use strict"; (${repairAccessors})();`);
 const repairFunctionsShim = cleanupSource(`"use strict"; (${repairFunctions})();`);
 
-// Create a new unsafeRec from a brand new context, with new intrinsics and a
-// new global object
+// Create a new unsafeRec from a brand new context, with new intrinsics and
+// a new global object
 export function createNewUnsafeRec(allShims) {
   const unsafeGlobal = getNewUnsafeGlobal();
   unsafeGlobal.eval(repairAccessorsShim);
@@ -89,5 +88,5 @@ export function createCurrentUnsafeRec() {
   const unsafeGlobal = (0, eval)(unsafeGlobalSrc);
   repairAccessors();
   repairFunctions();
-  return createUnsafeRec(unsafeGlobal, []);
+  return createUnsafeRec(unsafeGlobal);
 }

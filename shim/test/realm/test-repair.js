@@ -1,6 +1,5 @@
 import test from 'tape';
 import Realm from '../../src/realm';
-import { getNewUnsafeGlobal } from '../../src/unsafeRec';
 // import { walkObjects } from '../../src/scan';
 
 export const protectedObjects = new WeakMap();
@@ -25,7 +24,7 @@ function testForBug(o) {
 }
 
 test('fix the bug in which accessor methods leak the global', t => {
-  const unfixedGlobal = getNewUnsafeGlobal();
+  const unfixedGlobal = global;
   try {
     testForBug(unfixedGlobal.Object);
     // eslint-disable-next-line no-console
