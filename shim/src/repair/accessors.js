@@ -16,13 +16,14 @@
 
 // todo: this file should be moved out to a separate repo and npm module.
 export function repairAccessors() {
-  const {
-    defineProperty,
-    defineProperties,
-    getOwnPropertyDescriptor,
-    getPrototypeOf,
-    prototype: objectPrototype
-  } = Object;
+  const { getOwnPropertyDescriptor, getPrototypeOf, prototype: objectPrototype } = Object;
+  const { defineProperty } = Reflect;
+
+  const definePropertyOrThrow = (obj, prop, desc) => {
+    if (defineProperty(obj, prop, desc) === false) {
+      throw new TypeError(`Cannot define property: ${prop}`);
+    }
+  };
 
   // On some platforms, the implementation of these functions act as if they are
   // in sloppy mode: if they're invoked badly, they will expose the global object,
@@ -59,48 +60,46 @@ export function repairAccessors() {
     return obj;
   }
 
-  defineProperties(objectPrototype, {
-    __defineGetter__: {
-      value: function __defineGetter__(prop, func) {
-        const O = toObject(this);
-        defineProperty(O, prop, {
-          get: aFunction(func, 'getter'),
-          enumerable: true,
-          configurable: true
-        });
+  definePropertyOrThrow(objectPrototype, '__defineGetter__', {
+    value: function __defineGetter__(prop, func) {
+      const O = toObject(this);
+      defineProperty(O, prop, {
+        get: aFunction(func, 'getter'),
+        enumerable: true,
+        configurable: true
+      });
+    }
+  });
+  definePropertyOrThrow(objectPrototype, '__defineSetter__', {
+    value: function __defineSetter__(prop, func) {
+      const O = toObject(this);
+      defineProperty(O, prop, {
+        set: aFunction(func, 'setter'),
+        enumerable: true,
+        configurable: true
+      });
+    }
+  });
+  definePropertyOrThrow(objectPrototype, '__lookupGetter__', {
+    value: function __lookupGetter__(prop) {
+      let O = toObject(this);
+      prop = asPropertyName(prop);
+      let desc;
+      while (O && !(desc = getOwnPropertyDescriptor(O, prop))) {
+        O = getPrototypeOf(O);
       }
-    },
-    __defineSetter__: {
-      value: function __defineSetter__(prop, func) {
-        const O = toObject(this);
-        defineProperty(O, prop, {
-          set: aFunction(func, 'setter'),
-          enumerable: true,
-          configurable: true
-        });
+      return desc && desc.get;
+    }
+  });
+  definePropertyOrThrow(objectPrototype, '__lookupSetter__', {
+    value: function __lookupSetter__(prop) {
+      let O = toObject(this);
+      prop = asPropertyName(prop);
+      let desc;
+      while (O && !(desc = getOwnPropertyDescriptor(O, prop))) {
+        O = getPrototypeOf(O);
       }
-    },
-    __lookupGetter__: {
-      value: function __lookupGetter__(prop) {
-        let O = toObject(this);
-        prop = asPropertyName(prop);
-        let desc;
-        while (O && !(desc = getOwnPropertyDescriptor(O, prop))) {
-          O = getPrototypeOf(O);
-        }
-        return desc && desc.get;
-      }
-    },
-    __lookupSetter__: {
-      value: function __lookupSetter__(prop) {
-        let O = toObject(this);
-        prop = asPropertyName(prop);
-        let desc;
-        while (O && !(desc = getOwnPropertyDescriptor(O, prop))) {
-          O = getPrototypeOf(O);
-        }
-        return desc && desc.set;
-      }
+      return desc && desc.set;
     }
   });
 }
