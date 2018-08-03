@@ -1,5 +1,6 @@
 // this module must never be importable outside the Realm shim itself
 import { getSharedGlobalDescs } from './stdlib';
+import { repairProperties } from './properties';
 import { repairAccessors } from './accessors';
 import { repairFunctions } from './functions';
 import { cleanupSource } from './utilities';
@@ -69,6 +70,7 @@ function createUnsafeRec(unsafeGlobal, allShims = []) {
   });
 }
 
+const repairPropertiesShim = cleanupSource(`"use strict"; (${repairProperties})();`);
 const repairAccessorsShim = cleanupSource(`"use strict"; (${repairAccessors})();`);
 const repairFunctionsShim = cleanupSource(`"use strict"; (${repairFunctions})();`);
 
@@ -76,6 +78,7 @@ const repairFunctionsShim = cleanupSource(`"use strict"; (${repairFunctions})();
 // new global object
 export function createNewUnsafeRec(allShims) {
   const unsafeGlobal = getNewUnsafeGlobal();
+  unsafeGlobal.eval(repairPropertiesShim);
   unsafeGlobal.eval(repairAccessorsShim);
   unsafeGlobal.eval(repairFunctionsShim);
   return createUnsafeRec(unsafeGlobal, allShims);
@@ -85,6 +88,7 @@ export function createNewUnsafeRec(allShims) {
 // being parsed and executed, aka the "Primal Realm"
 export function createCurrentUnsafeRec() {
   const unsafeGlobal = (0, eval)(unsafeGlobalSrc);
+  repairProperties();
   repairAccessors();
   repairFunctions();
   return createUnsafeRec(unsafeGlobal);
