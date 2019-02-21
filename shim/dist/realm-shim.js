@@ -752,6 +752,8 @@
     // realm's code or if it is user-land invocation, so we can react differently.
     let useUnsafeEvaluator = false;
 
+    let scopedEvaluatorMemo = undefined;
+
     return {
       // The scope handler throws if any trap other than get/set/has are run
       // (e.g. getOwnPropertyDescriptors, apply, getPrototypeOf).
@@ -764,6 +766,13 @@
 
       unsafeEvaluatorAllowed() {
         return useUnsafeEvaluator;
+      },
+
+      getScopedEvaluatorMemo() {
+        return scopedEvaluatorMemo;
+      },
+      memoScopedEvaluator(newScopedEvaluator) {
+        scopedEvaluatorMemo = newScopedEvaluator;
       },
 
       get(target, prop) {
@@ -791,6 +800,12 @@
 
         // Properties of the global.
         if (prop in target) {
+
+          const desc = getOwnPropertyDescriptor(getPrototypeOf(target), prop);
+          if (desc && desc.writable === false && desc.configurable === false) {
+            scopedEvaluatorMemo = undefined;
+          }
+          
           return target[prop];
         }
 
@@ -929,21 +944,8 @@
     const { unsafeFunction } = unsafeRec;
 
     const scopeHandler = createScopeHandler(unsafeRec);
-    const optimizableGlobals = getOptimizableGlobals(safeGlobal);
-    const scopedEvaluatorFactory = createScopedEvaluatorFactory(unsafeRec, optimizableGlobals);
-
+    
     function factory(endowments = {}) {
-      // todo (shim limitation): scan endowments, throw error if endowment
-      // overlaps with the const optimization (which would otherwise
-      // incorrectly shadow endowments), or if endowments includes 'eval'. Also
-      // prohibit accessor properties (to be able to consistently explain
-      // things in terms of shimming the global lexical scope).
-      // writeable-vs-nonwritable == let-vs-const, but there's no
-      // global-lexical-scope equivalent of an accessor, outside what we can
-      // explain/spec
-      const scopeTarget = create(safeGlobal, getOwnPropertyDescriptors(endowments));
-      const scopeProxy = new Proxy(scopeTarget, scopeHandler);
-      const scopedEvaluator = apply(scopedEvaluatorFactory, safeGlobal, [scopeProxy]);
 
       // We use the the concise method syntax to create an eval without a
       // [[Construct]] behavior (such that the invocation "new eval()" throws
@@ -951,6 +953,30 @@
       // 'this' binding.
       const safeEval = {
         eval(src) {
+
+          let scopedEvaluator = scopeHandler.getScopedEvaluatorMemo();
+
+          if (scopedEvaluator === undefined) {
+            const constants = getOptimizableGlobals(safeGlobal);
+            const scopedEvaluatorFactory = createScopedEvaluatorFactory(unsafeRec, constants);
+
+            // todo (shim limitation): scan endowments, throw error if endowment
+            // overlaps with the const optimization (which would otherwise
+            // incorrectly shadow endowments), or if endowments includes 'eval'. Also
+            // prohibit accessor properties (to be able to consistently explain
+            // things in terms of shimming the global lexical scope).
+            // writeable-vs-nonwritable == let-vs-const, but there's no
+            // global-lexical-scope equivalent of an accessor, outside what we can
+            // explain/spec
+            const scopeTarget = create(safeGlobal, getOwnPropertyDescriptors(endowments));
+            const scopeProxy = new Proxy(scopeTarget, scopeHandler);
+            scopedEvaluator = apply(scopedEvaluatorFactory, safeGlobal, [scopeProxy]);
+
+            if (constants.length >= 1) {
+              scopeHandler.memoScopedEvaluator(scopedEvaluator);
+            }
+          }
+
           src = `${src}`;
           rejectImportExpressions(src);
           scopeHandler.allowUnsafeEvaluatorOnce();
